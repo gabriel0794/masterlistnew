@@ -90,6 +90,10 @@ const divisions = [
   { title: 'Local Health Support Division', units: localHealthSupportUnits },
   { title: 'Regulations, Licensing and Enforcement Division', units: regulationsLicensingUnits },
   { title: 'Provincial Department of Health Office', units: provincialHealthOfficeUnits },
+  {
+    title: 'Programs and Special Assignments',
+    units: ['Data Encoder', 'GIP', 'OJT'],
+  },
 ]
 
 const headUnitFilters = [
@@ -102,8 +106,41 @@ const headUnitFilters = [
 ] as const
 
 type HeadUnitFilter = typeof headUnitFilters[number]['value']
+type TechnicalFilter = 'all' | 'technical' | 'non-technical'
 
 const divisionOf = (unit: string) => divisions.find((division) => division.units.includes(unit))?.title ?? ''
+
+const personnelUnitOptions = [
+  'Office of the Director',
+  'Management Support Division',
+  'Local Health Support Division',
+  'Regulations, Licensing and Enforcement Division',
+  'PDOHO',
+  'Data Encoder',
+  'GIP',
+  'OJT',
+]
+
+function divisionFor(person: Personnel) {
+  if (personnelUnitOptions.includes(person.unit)) {
+    if (person.unit === 'PDOHO') return 'Provincial Department of Health Office'
+    if (['Data Encoder', 'GIP', 'OJT'].includes(person.unit)) return 'Programs and Special Assignments'
+    return person.unit
+  }
+  return divisionOf(person.unit)
+}
+
+function sectionFor(person: Personnel) {
+  return personnelUnitOptions.includes(person.unit)
+    ? person.assignment.trim() || person.unit
+    : person.unit
+}
+
+function technicalCategory(person: Personnel): Exclude<TechnicalFilter, 'all'> | null {
+  const grade = person.sg.trim().match(/^(?:SG\s*)?(\d+(?:\.\d+)?)/i)
+  if (!grade) return null
+  return Number(grade[1]) >= 11 ? 'technical' : 'non-technical'
+}
 
 export const personnel: Personnel[] = []
 
@@ -133,6 +170,31 @@ const MONTHS = [
 ]
 
 const normalize = (value: string) => value.toLowerCase().replace(/,/g, ' ').replace(/\s+/g, ' ').trim()
+
+function dateParts(value: string): [number, number, number] | null {
+  const isoDate = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value.trim())
+  if (isoDate) return [Number(isoDate[1]), Number(isoDate[2]), Number(isoDate[3])]
+
+  const usDate = /^(\d{1,2})\/(\d{1,2})\/(\d{4})$/.exec(value.trim())
+  if (usDate) return [Number(usDate[3]), Number(usDate[1]), Number(usDate[2])]
+
+  return null
+}
+
+function formatDisplayDate(value: string) {
+  const parts = dateParts(value)
+  if (!parts) return value
+  const [year, month, day] = parts
+  return `${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}/${year}`
+}
+
+function compareDateOfEntry(first: Personnel, second: Personnel) {
+  const firstParts = dateParts(first.dateOfEntry)
+  const secondParts = dateParts(second.dateOfEntry)
+  const firstTime = firstParts ? new Date(firstParts[0], firstParts[1] - 1, firstParts[2]).getTime() : Number.POSITIVE_INFINITY
+  const secondTime = secondParts ? new Date(secondParts[0], secondParts[1] - 1, secondParts[2]).getTime() : Number.POSITIVE_INFINITY
+  return firstTime - secondTime
+}
 
 // "NOVEMBER 24, 2002" -> also searchable as 11/24/2002, 11-24-2002, 2002-11-24 (padded and unpadded)
 function dateVariants(value: string): string[] {
@@ -173,7 +235,12 @@ function personText(person: Personnel, divisionTitle: string) {
  * - Otherwise only the personnel who match are shown, under their unit.
  * - Divisions with nothing to show are hidden.
  */
-function buildSections(tokens: string[], selectedFilter: HeadUnitFilter, records: Personnel[]): DivisionSection[] {
+function buildSections(
+  tokens: string[],
+  selectedFilter: HeadUnitFilter,
+  selectedTechnicalFilter: TechnicalFilter,
+  records: Personnel[],
+): DivisionSection[] {
   const matches = (text: string) => tokens.every((token) => text.includes(token))
 
   return divisions
@@ -181,11 +248,16 @@ function buildSections(tokens: string[], selectedFilter: HeadUnitFilter, records
       const divisionMatchesFilter = selectedFilter === 'all' || selectedFilter === title
       if (!divisionMatchesFilter) return { title, units: [], total: 0 }
 
-      const unitSections = units.flatMap((unit): UnitSection[] => {
+      const divisionPeople = records.filter((person) => divisionFor(person) === title)
+      const unitNames = [...new Map(
+        [...units, ...divisionPeople.map(sectionFor)]
+          .map((unit) => [normalize(unit), unit] as const),
+      ).values()]
+      const unitSections = unitNames.flatMap((unit): UnitSection[] => {
         const unitMatches = matches(normalize(`${unit} ${title}`))
-        const people = records.filter(
-          (person) =>
-            person.unit === unit &&
+        const people = divisionPeople.filter(
+          (person) => normalize(sectionFor(person)) === normalize(unit) &&
+            (selectedTechnicalFilter === 'all' || technicalCategory(person) === selectedTechnicalFilter) &&
             (unitMatches || matches(personText(person, title))),
         )
         if (unitMatches) return [{ unit, people }]
@@ -199,6 +271,21 @@ function buildSections(tokens: string[], selectedFilter: HeadUnitFilter, records
       }
     })
     .filter((division) => division.units.length > 0)
+}
+
+function buildFlatPersonnelList(
+  tokens: string[],
+  selectedFilter: HeadUnitFilter,
+  selectedTechnicalFilter: Exclude<TechnicalFilter, 'all'>,
+  records: Personnel[],
+) {
+  return records
+    .filter((person) =>
+      (selectedFilter === 'all' || divisionFor(person) === selectedFilter) &&
+      technicalCategory(person) === selectedTechnicalFilter &&
+      tokens.every((token) => personText(person, divisionFor(person)).includes(token)),
+    )
+    .sort(compareDateOfEntry)
 }
 
 /* ─────────────── Details card (opens over the page) ─────────────── */
@@ -226,8 +313,8 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
         { label: 'Employment Type', value: person.employmentType },
         { label: 'Position', value: person.position },
         { label: 'Salary Grade', value: person.sg },
-        { label: 'Division', value: divisionOf(person.unit) },
-        { label: 'Unit', value: person.unit },
+        { label: 'Division', value: divisionFor(person) },
+        { label: 'Unit', value: sectionFor(person) },
         { label: 'Area of Assignment', value: person.assignment },
         { label: 'Fund Source', value: person.fundSource },
       ],
@@ -246,9 +333,9 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
     {
       title: 'Personal Details',
       fields: [
-        { label: 'Date of Entry', value: person.dateOfEntry },
+        { label: 'Date of Entry', value: formatDisplayDate(person.dateOfEntry) },
         { label: 'Eligibility', value: person.eligibility },
-        { label: 'Birthdate', value: person.birthdate },
+        { label: 'Birthdate', value: formatDisplayDate(person.birthdate) },
         { label: 'Sex', value: person.sex },
         { label: 'Email Address', value: person.email, href: `mailto:${person.email}` },
         { label: 'Contact Number', value: person.contact, href: `tel:${person.contact}` },
@@ -326,17 +413,6 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
 
 /* ─────────────── One unit (e.g. "Personnel Section") ─────────────── */
 
-const allUnits = divisions.flatMap((division) => division.units)
-const personnelUnitOptions = [
-  'Office of the Director',
-  'Management Support Division',
-  'Local Health Support Division',
-  'Regulations, Licensing and Enforcement Division',
-  'PDOHO',
-  'Data Encoder',
-  'GIP',
-  'OJT',
-]
 const sexOptions = ['Male', 'Female']
 
 function formatDateInput(value: string) {
@@ -361,7 +437,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
   const [form, setForm] = useState<Personnel>({
     id: '', name: '', position: '', assignment: '', birthdate: '', sg: '', dateOfEntry: '',
     eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', gsisNo: '',
-    email: '', contact: '', sex: '', unit: allUnits[0], employmentType: 'Contract of Service',
+    email: '', contact: '', sex: '', unit: personnelUnitOptions[0], employmentType: 'Contract of Service',
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -374,7 +450,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
     { key: 'id', label: 'ID No.', required: true },
     { key: 'name', label: 'Name', required: true },
     { key: 'position', label: 'Position' },
-    { key: 'assignment', label: 'Area of Assignment' },
+    { key: 'assignment', label: 'Unit / Area of Assignment' },
     { key: 'birthdate', label: 'Birthdate' },
     { key: 'sg', label: 'Salary Grade' },
     { key: 'dateOfEntry', label: 'Date of Entry' },
@@ -436,7 +512,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
             </select>
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
-            Unit
+            Division
             <select value={form.unit} onChange={(event) => update('unit', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
               {personnelUnitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
             </select>
@@ -481,7 +557,9 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
 
           <tbody>
             {groups.map((group) => {
-              const groupPeople = people.filter((person) => person.employmentType === group)
+              const groupPeople = people
+                .filter((person) => person.employmentType === group)
+                .sort(compareDateOfEntry)
 
               return (
                 <Fragment key={group}>
@@ -506,7 +584,9 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
                                 Show
                               </button>
                             ) : (
-                              person[column.key]
+                              column.key === 'birthdate' || column.key === 'dateOfEntry'
+                                ? formatDisplayDate(person[column.key])
+                                : person[column.key]
                             )}
                           </td>
                         ))}
@@ -530,6 +610,59 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
         Number of Personnel in this Unit: {people.length}
       </div>
     </section>
+  )
+}
+
+function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; title: string; onShow: ShowHandler }) {
+  return (
+    <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
+      <h2 className="bg-[#17652a] px-4 py-3 text-center text-2xl font-extrabold uppercase text-white sm:text-3xl">
+        {title}
+      </h2>
+      <div className="overflow-x-auto">
+        <table className="w-full table-fixed border-collapse text-[10px] uppercase text-slate-700" style={{ minWidth: tableMinWidth }}>
+          <colgroup>
+            {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
+          </colgroup>
+          <thead>
+            <tr className="bg-[#a6d9a9] text-center text-[10px] font-extrabold leading-tight text-white">
+              {columns.map((column) => <th key={column.key} className="px-2 py-2">{column.label}</th>)}
+            </tr>
+          </thead>
+          <tbody>
+            {people.length > 0 ? people.map((person) => (
+              <tr key={person.id} className="border-b border-slate-100 hover:bg-green-50">
+                {columns.map((column) => (
+                  <td key={column.key} className="break-words px-2 py-2 text-center align-middle">
+                    {column.key === 'action' ? (
+                      <button
+                        type="button"
+                        onClick={() => onShow(person)}
+                        aria-label={`Show details for ${person.name}`}
+                        className="cursor-pointer rounded-md bg-[#17652a] px-3 py-1 text-[10px] font-bold uppercase text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
+                      >
+                        Show
+                      </button>
+                    ) : column.key === 'birthdate' || column.key === 'dateOfEntry'
+                      ? formatDisplayDate(person[column.key])
+                      : person[column.key]}
+                  </td>
+                ))}
+              </tr>
+            )) : (
+              <tr>
+                <td colSpan={columns.length} className="px-2 py-6 text-center text-[10px] normal-case text-slate-500">
+                  No personnel match your search and classification.
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <footer className="flex justify-end border-t border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-slate-900">
+        Total Personnel: {people.length}
+      </footer>
+    </div>
   )
 }
 
@@ -558,16 +691,29 @@ function DivisionCard({ title, units, total, onShow }: DivisionSection & { onSho
 export default function MasterList() {
   const [search, setSearch] = useState('')
   const [selectedFilter, setSelectedFilter] = useState<HeadUnitFilter>('all')
+  const [selectedTechnicalFilter, setSelectedTechnicalFilter] = useState<TechnicalFilter>('all')
   const [selected, setSelected] = useState<Personnel | null>(null)
   const [people, setPeople] = useState<Personnel[]>([])
   const [loadError, setLoadError] = useState('')
   const [showAddPersonnel, setShowAddPersonnel] = useState(false)
 
   const sections = useMemo(
-    () => buildSections(normalize(search).split(' ').filter(Boolean), selectedFilter, people),
-    [people, search, selectedFilter],
+    () => buildSections(normalize(search).split(' ').filter(Boolean), selectedFilter, 'all', people),
+    [people, search, selectedFilter, selectedTechnicalFilter],
   )
-  const totalPersonnel = sections.reduce((sum, division) => sum + division.total, 0)
+  const flatPersonnel = useMemo(
+    () => selectedTechnicalFilter === 'all'
+      ? []
+      : buildFlatPersonnelList(
+        normalize(search).split(' ').filter(Boolean),
+        selectedFilter,
+        selectedTechnicalFilter,
+        people,
+      ),
+    [people, search, selectedFilter, selectedTechnicalFilter],
+  )
+  const isFlatList = selectedTechnicalFilter !== 'all'
+  const totalPersonnel = isFlatList ? flatPersonnel.length : sections.reduce((sum, division) => sum + division.total, 0)
 
   useEffect(() => {
     const token = localStorage.getItem('masterlist-auth-token')
@@ -617,7 +763,7 @@ export default function MasterList() {
       </header>
 
       <div className="mb-7 flex items-center gap-4">
-        <nav className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" aria-label="Filter master list by head unit">
+        <nav className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" aria-label="Filter master list by division">
           {headUnitFilters.map((filter) => {
             const isActive = selectedFilter === filter.value
 
@@ -638,6 +784,19 @@ export default function MasterList() {
             )
           })}
         </nav>
+        <label className="shrink-0 text-xs font-bold text-slate-700">
+          <span className="sr-only">Filter personnel by technical classification</span>
+          <select
+            aria-label="Filter personnel by technical classification"
+            value={selectedTechnicalFilter}
+            onChange={(event) => setSelectedTechnicalFilter(event.target.value as TechnicalFilter)}
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 shadow-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+          >
+            <option value="all">All SG Classifications</option>
+            <option value="technical">Technical (SG 11 and above)</option>
+            <option value="non-technical">Non-Technical (SG 10 and below)</option>
+          </select>
+        </label>
         <button
           type="button"
           onClick={() => setShowAddPersonnel(true)}
@@ -649,7 +808,13 @@ export default function MasterList() {
 
       <div className="flex flex-col gap-10">
         {loadError && <p role="alert" className="rounded-lg bg-red-50 p-4 text-sm text-red-700">{loadError}</p>}
-        {sections.length > 0 ? (
+        {isFlatList ? (
+          <FlatPersonnelTable
+            title={selectedTechnicalFilter === 'technical' ? 'Technical Personnel' : 'Non-Technical Personnel'}
+            people={flatPersonnel}
+            onShow={setSelected}
+          />
+        ) : sections.length > 0 ? (
           sections.map((division) => <DivisionCard key={division.title} {...division} onShow={setSelected} />)
         ) : (
           <div className="rounded-xl border border-slate-200 bg-white px-4 py-10 text-center text-sm text-slate-500 shadow-lg">
