@@ -20,7 +20,9 @@ export type Personnel = {
   gsisNo?: string
   email: string
   contact: string
+  address: string
   sex: string
+  division: string
   unit: string
   employmentType: 'Regular' | 'Contract of Service'
 }
@@ -120,8 +122,21 @@ const personnelUnitOptions = [
   'GIP',
   'OJT',
 ]
+const personnelDivisionOptions = [
+  'Office of the Director',
+  'Management Support Division',
+  'Local Health Support Division',
+  'Regulations, Licensing and Enforcement Division',
+  'PDOHO',
+  'Programs and Special Assignments',
+]
 
 function divisionFor(person: Personnel) {
+  if (person.division) {
+    if (person.division === 'PDOHO') return 'Provincial Department of Health Office'
+    if (['Data Encoder', 'GIP', 'OJT'].includes(person.division)) return 'Programs and Special Assignments'
+    return person.division
+  }
   if (personnelUnitOptions.includes(person.unit)) {
     if (person.unit === 'PDOHO') return 'Provincial Department of Health Office'
     if (['Data Encoder', 'GIP', 'OJT'].includes(person.unit)) return 'Programs and Special Assignments'
@@ -131,9 +146,12 @@ function divisionFor(person: Personnel) {
 }
 
 function sectionFor(person: Personnel) {
-  return personnelUnitOptions.includes(person.unit)
-    ? person.assignment.trim() || person.unit
-    : person.unit
+  return person.unit || 'UNIT NOT SET'
+}
+
+function unitsForDivision(division: string) {
+  const title = division === 'PDOHO' ? 'Provincial Department of Health Office' : division
+  return divisions.find((item) => item.title === title)?.units ?? []
 }
 
 function technicalCategory(person: Personnel): Exclude<TechnicalFilter, 'all'> | null {
@@ -314,7 +332,8 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
         { label: 'Position', value: person.position },
         { label: 'Salary Grade', value: person.sg },
         { label: 'Division', value: divisionFor(person) },
-        { label: 'Unit', value: sectionFor(person) },
+        { label: 'Unit', value: person.unit || 'N/A' },
+        { label: 'Date of Entry', value: formatDisplayDate(person.dateOfEntry) },
         { label: 'Area of Assignment', value: person.assignment },
         { label: 'Fund Source', value: person.fundSource },
       ],
@@ -333,10 +352,10 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
     {
       title: 'Personal Details',
       fields: [
-        { label: 'Date of Entry', value: formatDisplayDate(person.dateOfEntry) },
         { label: 'Eligibility', value: person.eligibility },
         { label: 'Birthdate', value: formatDisplayDate(person.birthdate) },
         { label: 'Sex', value: person.sex },
+        { label: 'Address', value: person.address || 'N/A' },
         { label: 'Email Address', value: person.email, href: `mailto:${person.email}` },
         { label: 'Contact Number', value: person.contact, href: `tel:${person.contact}` },
       ],
@@ -345,19 +364,19 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
       onClick={onClose}
     >
       <div
         role="dialog"
         aria-modal="true"
         aria-labelledby="personnel-details-title"
-        className="max-h-[90vh] w-full max-w-2xl overflow-y-auto rounded-xl bg-white shadow-2xl"
+        className="max-h-[calc(100dvh-1rem)] w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 bg-[#17652a] px-6 py-4 text-white">
+        <div className="flex items-start justify-between gap-4 bg-[#17652a] px-5 py-3 text-white">
           <div>
-            <h2 id="personnel-details-title" className="text-xl font-extrabold uppercase">
+            <h2 id="personnel-details-title" className="text-lg font-extrabold uppercase sm:text-xl">
               {person.name}
             </h2>
             <p className="text-xs font-medium uppercase text-green-100">{person.position}</p>
@@ -372,36 +391,41 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
           </button>
         </div>
 
-        <dl className="grid gap-x-6 gap-y-4 px-6 py-6 sm:grid-cols-2">
+        <div className="grid gap-3 p-3 sm:grid-cols-2">
           {fieldGroups.map((group) => (
-            <Fragment key={group.title}>
-              <div className="col-span-full border-b border-green-100 pb-2 pt-2 first:pt-0">
-                <h3 className="text-sm font-extrabold uppercase tracking-wide text-[#17652a]">{group.title}</h3>
-              </div>
-              {group.fields.map((field) => (
-                <div key={field.label}>
-                  <dt className="text-[10px] font-bold uppercase tracking-wide text-slate-500">{field.label}</dt>
-                  <dd className="mt-0.5 break-words text-sm font-semibold uppercase text-slate-900">
-                    {field.href ? (
-                      <a href={field.href} className="normal-case underline decoration-slate-300 underline-offset-2 hover:text-green-800">
-                        {field.value}
-                      </a>
-                    ) : (
-                      field.value
-                    )}
-                  </dd>
-                </div>
-              ))}
-            </Fragment>
+            <section
+              key={group.title}
+              className={`rounded-lg border border-slate-200 ${group.title === 'Employment Details' ? 'sm:col-span-2' : ''}`}
+            >
+              <h3 className="border-b border-green-100 bg-green-50 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide text-[#17652a]">
+                {group.title}
+              </h3>
+              <dl className={`grid grid-cols-2 gap-x-3 gap-y-2 p-3 ${group.title === 'Employment Details' ? 'sm:grid-cols-4' : ''}`}>
+                {group.fields.map((field) => (
+                  <div key={field.label} className={field.label === 'Address' ? 'col-span-full' : ''}>
+                    <dt className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{field.label}</dt>
+                    <dd className="mt-0.5 break-words text-xs font-semibold uppercase leading-tight text-slate-900">
+                      {field.href ? (
+                        <a href={field.href} className="normal-case underline decoration-slate-300 underline-offset-2 hover:text-green-800">
+                          {field.value}
+                        </a>
+                      ) : (
+                        field.value
+                      )}
+                    </dd>
+                  </div>
+                ))}
+              </dl>
+            </section>
           ))}
-        </dl>
+        </div>
 
-        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-6 py-3">
+        <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-2">
           <button
             type="button"
             onClick={onClose}
             autoFocus
-            className="rounded-lg bg-[#17652a] px-5 py-2 text-xs font-bold uppercase text-white hover:bg-green-700"
+            className="rounded-lg bg-[#17652a] px-4 py-1.5 text-xs font-bold uppercase text-white hover:bg-green-700"
           >
             Close
           </button>
@@ -437,7 +461,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
   const [form, setForm] = useState<Personnel>({
     id: '', name: '', position: '', assignment: '', birthdate: '', sg: '', dateOfEntry: '',
     eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', gsisNo: '',
-    email: '', contact: '', sex: '', unit: personnelUnitOptions[0], employmentType: 'Contract of Service',
+    email: '', contact: '', address: '', sex: '', division: personnelDivisionOptions[0], unit: '', employmentType: 'Contract of Service',
   })
   const [error, setError] = useState('')
   const [saving, setSaving] = useState(false)
@@ -462,6 +486,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
     { key: 'gsisNo', label: 'GSIS No. (Regular only)' },
     { key: 'email', label: 'Email Address' },
     { key: 'contact', label: 'Contact Number' },
+    { key: 'address', label: 'Address' },
   ]
 
   const submit = async (event: FormEvent<HTMLFormElement>) => {
@@ -495,7 +520,16 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
           {textFields.map((field) => (
             <label key={field.key} className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
               {field.label}
-              <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : event.target.value)} required={field.required} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
+              {field.key === 'address' ? (
+                <textarea
+                  value={form.address}
+                  onChange={(event) => update('address', event.target.value)}
+                  rows={2}
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+                />
+              ) : (
+                <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : event.target.value)} required={field.required} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
+              )}
             </label>
           ))}
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
@@ -513,8 +547,15 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Division
-            <select value={form.unit} onChange={(event) => update('unit', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
-              {personnelUnitOptions.map((unit) => <option key={unit} value={unit}>{unit}</option>)}
+            <select value={form.division} onChange={(event) => setForm((current) => ({ ...current, division: event.target.value, unit: '' }))} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+              {personnelDivisionOptions.map((division) => <option key={division} value={division}>{division}</option>)}
+            </select>
+          </label>
+          <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
+            Unit
+            <select value={form.unit} onChange={(event) => update('unit', event.target.value)} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+              <option value="">Select unit</option>
+              {unitsForDivision(form.division).map((unit) => <option key={unit} value={unit}>{unit}</option>)}
             </select>
           </label>
         </div>
