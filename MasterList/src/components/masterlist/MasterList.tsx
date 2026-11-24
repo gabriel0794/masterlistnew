@@ -17,6 +17,7 @@ export type Personnel = {
   tinNo?: string
   sssNo?: string
   philhealthNo?: string
+  pagibigNo?: string
   gsisNo?: string
   email: string
   contact: string
@@ -165,14 +166,10 @@ export const personnel: Personnel[] = []
 // Columns shown in the table. Fixed widths (px) keep the header and every row aligned.
 export const columns: Array<{ key: keyof Personnel | 'action'; label: string; width: number }> = [
   { key: 'id', label: 'ID NO.', width: 90 },
-  { key: 'name', label: 'NAME', width: 200 },
-  { key: 'position', label: 'POSITION', width: 190 },
-  { key: 'assignment', label: 'AREA OF ASSIGNMENT', width: 170 },
-  { key: 'birthdate', label: 'BIRTHDATE', width: 130 },
-  { key: 'sg', label: 'SG', width: 50 },
-  { key: 'dateOfEntry', label: 'DATE OF ENTRY', width: 140 },
-  { key: 'eligibility', label: 'ELIGIBILITY', width: 110 },
-  { key: 'fundSource', label: 'FUND SOURCE', width: 100 },
+  { key: 'name', label: 'PERSONNEL', width: 280 },
+  { key: 'position', label: 'POSITION', width: 220 },
+  { key: 'assignment', label: 'AREA OF ASSIGNMENT', width: 210 },
+  { key: 'sg', label: 'SG', width: 60 },
   { key: 'action', label: 'DETAILS', width: 90 },
 ]
 
@@ -204,6 +201,45 @@ function formatDisplayDate(value: string) {
   if (!parts) return value
   const [year, month, day] = parts
   return `${String(month).padStart(2, '0')}/${String(day).padStart(2, '0')}/${year}`
+}
+
+function formatNumber(value: string | undefined, groups: number[]) {
+  if (!value || value.toUpperCase() === 'N/A') return value ?? ''
+  const digits = value.replace(/\D/g, '').slice(0, groups.reduce((sum, size) => sum + size, 0))
+  let cursor = 0
+  return groups
+    .map((size) => {
+      const part = digits.slice(cursor, cursor + size)
+      cursor += size
+      return part
+    })
+    .filter(Boolean)
+    .join('-')
+}
+
+const formatTinNo = (value?: string) => formatNumber(value, [3, 3, 3, 4])
+const formatSssNo = (value?: string) => formatNumber(value, [2, 7, 1])
+const formatPhilhealthNo = (value?: string) => formatNumber(value, [2, 9, 1])
+const formatPagibigNo = (value?: string) => formatNumber(value, [4, 4, 4])
+
+function formatContributionNumber(field: keyof Personnel, value: string) {
+  if (field === 'tinNo') return formatTinNo(value)
+  if (field === 'sssNo') return formatSssNo(value)
+  if (field === 'philhealthNo') return formatPhilhealthNo(value)
+  if (field === 'pagibigNo') return formatPagibigNo(value)
+  return value.replace(/\D/g, '').slice(0, 11)
+}
+
+function formatListName(value: string) {
+  const name = value.trim().replace(/\s+/g, ' ')
+  if (!name) return { surname: '', given: '' }
+  const commaIndex = name.indexOf(',')
+  if (commaIndex >= 0) {
+    return { surname: name.slice(0, commaIndex).trim().toUpperCase(), given: name.slice(commaIndex + 1).trim() }
+  }
+  const parts = name.split(' ')
+  const surname = parts.pop() ?? ''
+  return { surname: surname.toUpperCase(), given: parts.join(' ') }
 }
 
 function compareDateOfEntry(first: Personnel, second: Personnel) {
@@ -341,12 +377,11 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
     {
       title: 'Benefits and Contribution Details',
       fields: [
-        { label: 'TIN No.', value: person.tinNo ?? 'N/A' },
-        { label: 'SSS No.', value: person.sssNo ?? 'N/A' },
-        { label: 'Philhealth No.', value: person.philhealthNo ?? 'N/A' },
-        ...(person.employmentType === 'Regular'
-          ? [{ label: 'GSIS No.', value: person.gsisNo ?? 'N/A' }]
-          : []),
+        { label: 'TIN No.', value: formatTinNo(person.tinNo) || 'N/A' },
+        { label: 'SSS No.', value: formatSssNo(person.sssNo) || 'N/A' },
+        { label: 'PhilHealth No.', value: formatPhilhealthNo(person.philhealthNo) || 'N/A' },
+        { label: 'PAG-IBIG MID No.', value: formatPagibigNo(person.pagibigNo) || 'N/A' },
+        { label: 'GSIS No.', value: person.employmentType === 'Regular' ? (person.gsisNo || 'N/A') : 'N/A' },
       ],
     },
     {
@@ -460,7 +495,7 @@ function isValidDateInput(value: string) {
 function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promise<void>; onClose: () => void }) {
   const [form, setForm] = useState<Personnel>({
     id: '', name: '', position: '', assignment: '', birthdate: '', sg: '', dateOfEntry: '',
-    eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', gsisNo: '',
+    eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', pagibigNo: '', gsisNo: '',
     email: '', contact: '', address: '', sex: '', division: personnelDivisionOptions[0], unit: '', employmentType: 'Contract of Service',
   })
   const [error, setError] = useState('')
@@ -483,6 +518,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
     { key: 'tinNo', label: 'TIN No.' },
     { key: 'sssNo', label: 'SSS No.' },
     { key: 'philhealthNo', label: 'Philhealth No.' },
+    { key: 'pagibigNo', label: 'PAG-IBIG MID No.' },
     { key: 'gsisNo', label: 'GSIS No. (Regular only)' },
     { key: 'email', label: 'Email Address' },
     { key: 'contact', label: 'Contact Number' },
@@ -528,7 +564,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
                   className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
                 />
               ) : (
-                <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : event.target.value)} required={field.required} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100" />
+                <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? formatContributionNumber(field.key, event.target.value) : event.target.value)} required={field.required} disabled={field.key === 'gsisNo' && form.employmentType === 'Contract of Service'} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' || ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : field.key === 'tinNo' ? '###-###-### or ###-###-###-###' : field.key === 'sssNo' ? '##-#######-#' : field.key === 'philhealthNo' ? '##-#########-#' : field.key === 'pagibigNo' ? '####-####-####' : field.key === 'gsisNo' ? '11 digits' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" />
               )}
             </label>
           ))}
@@ -571,13 +607,14 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
 function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler }) {
   return (
     <section className="mt-4 border-t border-slate-200 first:mt-0 first:border-t-0">
-      <h3 className="bg-[#65bd6c] px-4 py-2 text-center text-lg font-extrabold uppercase text-white sm:text-xl">
-        {unit}
+      <h3 className="flex items-center justify-between gap-3 border-b border-slate-200 bg-slate-50 px-4 py-3 text-left text-sm font-extrabold uppercase tracking-wide text-slate-800 sm:text-base">
+        <span>{unit}</span>
+        <span className="shrink-0 rounded-full bg-white px-2.5 py-1 text-[10px] font-bold tracking-normal text-slate-500 ring-1 ring-slate-200">Section / Unit</span>
       </h3>
 
       <div className="overflow-x-auto">
         <table
-          className="w-full table-fixed border-collapse text-[10px] uppercase text-slate-700"
+          className="w-full table-fixed border-collapse text-[11px] text-slate-700"
           style={{ minWidth: tableMinWidth }}
         >
           <colgroup>
@@ -587,7 +624,7 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
           </colgroup>
 
           <thead>
-            <tr className="bg-[#a6d9a9] text-center text-[10px] font-extrabold leading-tight text-white">
+            <tr className="border-b border-slate-200 bg-slate-100 text-center text-[10px] font-extrabold uppercase leading-tight tracking-wide text-slate-500">
               {columns.map((column) => (
                 <th key={column.key} className="px-2 py-2">
                   {column.label}
@@ -605,30 +642,33 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
               return (
                 <Fragment key={group}>
                   <tr>
-                    <td colSpan={columns.length} className="bg-[#e4f3e5] px-2 py-2 text-left text-sm font-extrabold text-slate-900">
+                    <td colSpan={columns.length} className="bg-white px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-500">
                       {group}
                     </td>
                   </tr>
 
                   {groupPeople.length > 0 ? (
                     groupPeople.map((person) => (
-                      <tr key={person.id} className="border-b border-slate-100 hover:bg-green-50">
+                      <tr key={person.id} className="border-b border-slate-100 transition-colors hover:bg-slate-50">
                         {columns.map((column) => (
-                          <td key={column.key} className="break-words px-2 py-2 text-center align-middle">
+                          <td key={column.key} className={`break-words px-3 py-3 align-middle ${column.key === 'name' ? 'text-left' : 'text-center'}`}>
                             {column.key === 'action' ? (
                               <button
                                 type="button"
                                 onClick={() => onShow(person)}
                                 aria-label={`Show details for ${person.name}`}
-                                className="rounded-md bg-[#17652a] px-3 py-1 text-[10px] font-bold uppercase text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700 cursor-pointer"
+                                className="cursor-pointer text-[10px] font-bold uppercase tracking-wide text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 hover:decoration-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700"
                               >
-                                Show
+                                Details
                               </button>
-                            ) : (
-                              column.key === 'birthdate' || column.key === 'dateOfEntry'
-                                ? formatDisplayDate(person[column.key])
-                                : person[column.key]
-                            )}
+                            ) : column.key === 'name' ? (
+                              <div>
+                                <p className="text-sm normal-case tracking-tight text-slate-950">
+                                  <strong className="font-extrabold">{formatListName(person.name).surname}</strong>
+                                  {formatListName(person.name).given && `, ${formatListName(person.name).given}`}
+                                </p>
+                              </div>
+                            ) : person[column.key]}
                           </td>
                         ))}
                       </tr>
@@ -647,7 +687,7 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
         </table>
       </div>
 
-      <div className="flex justify-end border-t border-green-100 bg-green-50 px-4 py-2 text-xs font-bold text-slate-800">
+      <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-2 text-xs font-bold text-slate-600">
         Number of Personnel in this Unit: {people.length}
       </div>
     </section>
@@ -657,7 +697,7 @@ function UnitTable({ unit, people, onShow }: UnitSection & { onShow: ShowHandler
 function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; title: string; onShow: ShowHandler }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-      <h2 className="bg-[#17652a] px-4 py-3 text-center text-2xl font-extrabold uppercase text-white sm:text-3xl">
+      <h2 className="border-b border-slate-200 bg-white px-4 py-3 text-left text-xl font-extrabold uppercase tracking-tight text-slate-950 sm:text-2xl">
         {title}
       </h2>
       <div className="overflow-x-auto">
@@ -666,27 +706,32 @@ function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; ti
             {columns.map((column) => <col key={column.key} style={{ width: column.width }} />)}
           </colgroup>
           <thead>
-            <tr className="bg-[#a6d9a9] text-center text-[10px] font-extrabold leading-tight text-white">
+            <tr className="border-b border-slate-200 bg-slate-100 text-center text-[10px] font-extrabold uppercase leading-tight tracking-wide text-slate-500">
               {columns.map((column) => <th key={column.key} className="px-2 py-2">{column.label}</th>)}
             </tr>
           </thead>
           <tbody>
             {people.length > 0 ? people.map((person) => (
-              <tr key={person.id} className="border-b border-slate-100 hover:bg-green-50">
+              <tr key={person.id} className="border-b border-slate-100 transition-colors hover:bg-slate-50">
                 {columns.map((column) => (
-                  <td key={column.key} className="break-words px-2 py-2 text-center align-middle">
+                  <td key={column.key} className={`break-words px-3 py-3 align-middle ${column.key === 'name' ? 'text-left' : 'text-center'}`}>
                     {column.key === 'action' ? (
                       <button
                         type="button"
                         onClick={() => onShow(person)}
                         aria-label={`Show details for ${person.name}`}
-                        className="cursor-pointer rounded-md bg-[#17652a] px-3 py-1 text-[10px] font-bold uppercase text-white hover:bg-green-700 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-green-700"
+                        className="cursor-pointer text-[10px] font-bold uppercase tracking-wide text-slate-600 underline decoration-slate-300 underline-offset-4 hover:text-slate-950 hover:decoration-slate-950 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-700"
                       >
-                        Show
+                        Details
                       </button>
-                    ) : column.key === 'birthdate' || column.key === 'dateOfEntry'
-                      ? formatDisplayDate(person[column.key])
-                      : person[column.key]}
+                    ) : column.key === 'name' ? (
+                      <div>
+                        <p className="text-sm normal-case tracking-tight text-slate-950">
+                          <strong className="font-extrabold">{formatListName(person.name).surname}</strong>
+                          {formatListName(person.name).given && `, ${formatListName(person.name).given}`}
+                        </p>
+                      </div>
+                    ) : person[column.key]}
                   </td>
                 ))}
               </tr>
@@ -700,7 +745,7 @@ function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; ti
           </tbody>
         </table>
       </div>
-      <footer className="flex justify-end border-t border-green-100 bg-green-50 px-4 py-3 text-sm font-bold text-slate-900">
+      <footer className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-3 text-sm font-bold text-slate-700">
         Total Personnel: {people.length}
       </footer>
     </div>
@@ -712,7 +757,7 @@ function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; ti
 function DivisionCard({ title, units, total, onShow }: DivisionSection & { onShow: ShowHandler }) {
   return (
     <div className="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-lg">
-      <h2 className="bg-[#17652a] px-4 py-2 text-center text-2xl font-extrabold uppercase text-white sm:text-3xl">
+      <h2 className="border-b border-slate-200 bg-slate-950 px-4 py-3 text-left text-xl font-extrabold uppercase tracking-tight text-white sm:text-2xl">
         {title}
       </h2>
 
@@ -720,7 +765,7 @@ function DivisionCard({ title, units, total, onShow }: DivisionSection & { onSho
         <UnitTable key={section.unit} {...section} onShow={onShow} />
       ))}
 
-      <footer className="flex justify-end border-t border-green-100 bg-green-50 px-4 py-4 text-sm font-bold text-slate-900">
+      <footer className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-4 text-sm font-bold text-slate-700">
         Total Personnel in {title}: {total}
       </footer>
     </div>
@@ -783,10 +828,11 @@ export default function MasterList() {
 
   return (
     <section className="mx-auto max-w-[1600px]">
-      <header className="mb-7 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <header className="mb-8 flex flex-col gap-5 border-b border-slate-200 pb-6 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h1 className="text-4xl font-extrabold uppercase tracking-tight text-slate-950 sm:text-5xl">Master List</h1>
-          <p className="text-xs font-medium uppercase text-slate-600">For all employee of DOH regular &amp; COS</p>
+          <p className="mb-2 text-[10px] font-bold uppercase tracking-[0.2em] text-slate-400">Personnel directory</p>
+          <h1 className="text-4xl font-extrabold tracking-tight text-slate-950 sm:text-5xl">Master List</h1>
+          <p className="mt-1 text-sm text-slate-500">DOH regular and contract of service personnel</p>
         </div>
 
         <label className="relative flex w-full sm:w-96">
@@ -798,12 +844,12 @@ export default function MasterList() {
             onChange={(event) => setSearch(event.target.value)}
             onKeyDown={(event) => { if (event.key === 'Escape') setSearch('') }}
             placeholder="Search name, unit, position, birthdate…"
-            className="w-full rounded-xl border border-slate-200 bg-white py-2.5 pl-4 pr-10 text-xs text-slate-900 shadow-md outline-none placeholder:text-slate-400 focus:border-green-700 focus:ring-2 focus:ring-green-100"
+            className="w-full rounded-lg border border-slate-200 bg-white py-3 pl-4 pr-10 text-sm text-slate-900 shadow-sm outline-none placeholder:text-slate-400 focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           />
         </label>
       </header>
 
-      <div className="mb-7 flex items-center gap-4">
+      <div className="mb-7 flex flex-col items-stretch gap-3 lg:flex-row lg:items-center">
         <nav className="flex min-w-0 flex-1 gap-2 overflow-x-auto pb-1" aria-label="Filter master list by division">
           {headUnitFilters.map((filter) => {
             const isActive = selectedFilter === filter.value
@@ -814,10 +860,10 @@ export default function MasterList() {
                 type="button"
                 onClick={() => setSelectedFilter(filter.value)}
                 aria-pressed={isActive}
-                className={`shrink-0 rounded-lg border px-4 py-2 text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-green-200 ${
+                className={`shrink-0 rounded-lg border px-4 py-2 text-xs font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-slate-200 ${
                   isActive
-                    ? 'border-[#17652a] bg-[#17652a] text-white shadow-md'
-                    : 'border-slate-200 bg-white text-slate-700 shadow-sm hover:border-green-700 hover:text-green-800'
+                    ? 'border-slate-950 bg-slate-950 text-white shadow-sm'
+                    : 'border-slate-200 bg-white text-slate-600 shadow-sm hover:border-slate-400 hover:text-slate-950'
                 }`}
               >
                 {filter.label}
@@ -831,7 +877,7 @@ export default function MasterList() {
             aria-label="Filter personnel by technical classification"
             value={selectedTechnicalFilter}
             onChange={(event) => setSelectedTechnicalFilter(event.target.value as TechnicalFilter)}
-            className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 shadow-sm outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+            className="rounded-lg border border-slate-200 bg-white px-3 py-2.5 text-xs font-bold text-slate-700 shadow-sm outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
           >
             <option value="all">All SG Classifications</option>
             <option value="technical">Technical (SG 11 and above)</option>
@@ -841,7 +887,7 @@ export default function MasterList() {
         <button
           type="button"
           onClick={() => setShowAddPersonnel(true)}
-          className="shrink-0 rounded-xl bg-[#17652a] px-5 py-2.5 text-xs font-bold uppercase text-white shadow-md hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-green-200"
+          className="shrink-0 rounded-lg bg-slate-950 px-5 py-2.5 text-xs font-bold uppercase text-white shadow-sm hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-300"
         >
           + Add Personnel
         </button>

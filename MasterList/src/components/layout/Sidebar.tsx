@@ -14,7 +14,6 @@ interface SidebarProps {
 
 const defaultItems: SidebarItem[] = [
   { id: 'masterlist', label: 'Master List'},
-  { id: 'dataencoder', label: 'Data Encoder' },
   { id: 'gip', label: 'GIP' },
   { id: 'ojt', label: 'OJT'},
 ]

@@ -19,7 +19,7 @@ const database = new Pool({
 type Personnel = {
   id: string; name: string; position: string; assignment: string; birthdate: string; sg: string
   dateOfEntry: string; eligibility: string; fundSource: string; tinNo?: string; sssNo?: string
-  philhealthNo?: string; gsisNo?: string; email: string; contact: string; address?: string; sex: string
+  philhealthNo?: string; pagibigNo?: string; gsisNo?: string; email: string; contact: string; address?: string; sex: string
   division: string; unit: string
   employmentType: 'Regular' | 'Contract of Service'
 }
@@ -28,7 +28,7 @@ const personnelColumns = `
   id_no AS id, name, position, assignment, birthdate::text AS birthdate,
   salary_grade::text AS sg, date_of_entry::text AS "dateOfEntry", eligibility,
   fund_source AS "fundSource", tin_no AS "tinNo", sss_no AS "sssNo",
-  philhealth_no AS "philhealthNo", gsis_no AS "gsisNo", email, contact, address, sex,
+  philhealth_no AS "philhealthNo", pagibig_no AS "pagibigNo", gsis_no AS "gsisNo", email, contact, address, sex,
   COALESCE(personnel_unit, CASE
     WHEN unit IN ('Office of the Director', 'Management Support Division', 'Local Health Support Division',
       'Regulations, Licensing and Enforcement Division', 'PDOHO', 'Data Encoder', 'GIP', 'OJT') THEN NULL
@@ -91,6 +91,7 @@ async function startServer() {
   await database.query('ALTER TABLE personnel ADD COLUMN IF NOT EXISTS address TEXT')
   await database.query('ALTER TABLE personnel ADD COLUMN IF NOT EXISTS division TEXT')
   await database.query('ALTER TABLE personnel ADD COLUMN IF NOT EXISTS personnel_unit TEXT')
+  await database.query('ALTER TABLE personnel ADD COLUMN IF NOT EXISTS pagibig_no TEXT')
   await database.query(`
     UPDATE personnel
     SET division = CASE
@@ -143,17 +144,17 @@ async function startServer() {
         const result = await database.query({
           text: `INSERT INTO personnel (
             id_no, name, position, assignment, birthdate, salary_grade, date_of_entry,
-            eligibility, fund_source, tin_no, sss_no, philhealth_no, gsis_no,
+            eligibility, fund_source, tin_no, sss_no, philhealth_no, pagibig_no, gsis_no,
             email, contact, address, sex, employment_type, unit, division, personnel_unit
           ) VALUES (
-            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21
+            $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22
           ) RETURNING ${personnelColumns}`,
           values: [
             saved.id, saved.name, saved.position || null, saved.assignment || null,
             toSqlDate(saved.birthdate), saved.sg ? Number(saved.sg) : null,
             toSqlDate(saved.dateOfEntry), saved.eligibility || null, saved.fundSource || null,
             saved.tinNo || null, saved.sssNo || null, saved.philhealthNo || null,
-            saved.gsisNo || null, saved.email || null, saved.contact || null, saved.address?.trim() || null,
+            saved.pagibigNo || null, saved.gsisNo || null, saved.email || null, saved.contact || null, saved.address?.trim() || null,
             saved.sex || null, saved.employmentType, saved.division, saved.division, saved.unit,
           ],
         })
