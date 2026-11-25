@@ -58,7 +58,7 @@ function sendJson(response: ServerResponse, status: number, body: unknown) {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': 'http://localhost:5173',
     'Access-Control-Allow-Headers': 'Content-Type, Authorization',
-    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Methods': 'GET, POST, PUT, OPTIONS',
   })
   response.end(JSON.stringify(body))
 }
@@ -125,6 +125,42 @@ async function startServer() {
       const token = request.headers.authorization?.replace(/^Bearer\s+/i, '')
       if (token) sessions.delete(token)
       return sendJson(response, 204, {})
+    }
+
+    const personnelMatch = request.url?.match(/^\/api\/personnel\/([^/?]+)$/)
+    if (request.method === 'PUT' && personnelMatch) {
+      if (!authenticated(request)) return sendJson(response, 401, { message: 'Please sign in to access personnel records.' })
+      try {
+        const person = await readBody<Personnel>(request)
+        if (!person.name?.trim() || !person.division || !person.unit || !['Regular', 'Contract of Service'].includes(person.employmentType)) {
+          return sendJson(response, 400, { message: 'Name, division, unit, and a valid employment type are required.' })
+        }
+
+        const saved = { ...person, name: person.name.trim() }
+        const result = await database.query({
+          text: `UPDATE personnel SET
+            name = $1, position = $2, assignment = $3, birthdate = $4, salary_grade = $5,
+            date_of_entry = $6, eligibility = $7, fund_source = $8, tin_no = $9, sss_no = $10,
+            philhealth_no = $11, pagibig_no = $12, gsis_no = $13, email = $14, contact = $15,
+            address = $16, sex = $17, employment_type = $18, unit = $19, division = $20, personnel_unit = $21
+          WHERE id_no = $22
+          RETURNING ${personnelColumns}`,
+          values: [
+            saved.name, saved.position || null, saved.assignment || null,
+            toSqlDate(saved.birthdate), saved.sg ? Number(saved.sg) : null,
+            toSqlDate(saved.dateOfEntry), saved.eligibility || null, saved.fundSource || null,
+            saved.tinNo || null, saved.sssNo || null, saved.philhealthNo || null,
+            saved.pagibigNo || null, saved.gsisNo || null, saved.email || null, saved.contact || null,
+            saved.address?.trim() || null, saved.sex || null, saved.employmentType,
+            saved.unit, saved.division, saved.unit, decodeURIComponent(personnelMatch[1]),
+          ],
+        })
+        if (result.rowCount === 0) return sendJson(response, 404, { message: 'Personnel record not found.' })
+        return sendJson(response, 200, result.rows[0])
+      } catch (error) {
+        console.error('Personnel update request failed:', error)
+        return sendJson(response, 400, { message: 'Unable to update personnel record.' })
+      }
     }
 
     if (request.url === '/api/personnel' && (request.method === 'GET' || request.method === 'POST')) {

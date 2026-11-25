@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { faMagnifyingGlass } from '@fortawesome/free-solid-svg-icons'
 import { FontAwesomeIcon } from '@fortawesome/react-fontawesome'
+import { toast } from 'react-toastify'
 
 /* ───────────────────────────── Types ───────────────────────────── */
 
@@ -344,7 +345,8 @@ function buildFlatPersonnelList(
 
 /* ─────────────── Details card (opens over the page) ─────────────── */
 
-export function PersonnelDetails({ person, onClose }: { person: Personnel; onClose: () => void }) {
+export function PersonnelDetails({ person, onClose, onUpdate }: { person: Personnel; onClose: () => void; onUpdate?: (person: Personnel) => Promise<void> }) {
+  const [editing, setEditing] = useState(false)
   useEffect(() => {
     const previousBodyOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
@@ -399,7 +401,7 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 sm:p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-2 backdrop-blur-sm sm:p-4"
       onClick={onClose}
     >
       <div
@@ -409,18 +411,18 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
         className="max-h-[calc(100dvh-1rem)] w-full max-w-5xl overflow-y-auto rounded-xl bg-white shadow-2xl"
         onClick={(event) => event.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-4 bg-[#17652a] px-5 py-3 text-white">
+        <div className="flex items-start justify-between gap-4 bg-slate-950 px-5 py-3 text-white">
           <div>
             <h2 id="personnel-details-title" className="text-lg font-extrabold uppercase sm:text-xl">
               {person.name}
             </h2>
-            <p className="text-xs font-medium uppercase text-green-100">{person.position}</p>
+            <p className="text-xs font-medium uppercase text-slate-300">{person.position}</p>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label="Close details"
-            className="rounded-md px-2 text-2xl leading-none text-green-100 hover:bg-white/10 hover:text-white"
+            className="rounded-md px-2 text-2xl leading-none text-slate-300 hover:bg-white/10 hover:text-white"
           >
             &times;
           </button>
@@ -432,7 +434,7 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
               key={group.title}
               className={`rounded-lg border border-slate-200 ${group.title === 'Employment Details' ? 'sm:col-span-2' : ''}`}
             >
-              <h3 className="border-b border-green-100 bg-green-50 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide text-[#17652a]">
+              <h3 className="border-b border-slate-200 bg-slate-50 px-3 py-1.5 text-xs font-extrabold uppercase tracking-wide text-slate-950">
                 {group.title}
               </h3>
               <dl className={`grid grid-cols-2 gap-x-3 gap-y-2 p-3 ${group.title === 'Employment Details' ? 'sm:grid-cols-4' : ''}`}>
@@ -441,7 +443,7 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
                     <dt className="text-[9px] font-bold uppercase tracking-wide text-slate-500">{field.label}</dt>
                     <dd className="mt-0.5 break-words text-xs font-semibold uppercase leading-tight text-slate-900">
                       {field.href ? (
-                        <a href={field.href} className="normal-case underline decoration-slate-300 underline-offset-2 hover:text-green-800">
+                        <a href={field.href} className="normal-case underline decoration-slate-300 underline-offset-2 hover:text-slate-950">
                           {field.value}
                         </a>
                       ) : (
@@ -456,16 +458,36 @@ export function PersonnelDetails({ person, onClose }: { person: Personnel; onClo
         </div>
 
         <div className="flex justify-end border-t border-slate-200 bg-slate-50 px-4 py-2">
+          {onUpdate && (
+            <button
+              type="button"
+              onClick={() => setEditing(true)}
+              className="mr-2 rounded-lg border border-slate-300 px-4 py-1.5 text-xs font-bold uppercase text-slate-700 hover:bg-white"
+            >
+              Update
+            </button>
+          )}
           <button
             type="button"
             onClick={onClose}
             autoFocus
-            className="rounded-lg bg-[#17652a] px-4 py-1.5 text-xs font-bold uppercase text-white hover:bg-green-700"
+            className="rounded-lg bg-slate-950 px-4 py-1.5 text-xs font-bold uppercase text-white hover:bg-slate-700"
           >
             Close
           </button>
         </div>
       </div>
+      {editing && onUpdate && (
+        <AddPersonnel
+          initialPerson={person}
+          onSave={async (updatedPerson) => {
+            await onUpdate(updatedPerson)
+            setEditing(false)
+            onClose()
+          }}
+          onClose={() => setEditing(false)}
+        />
+      )}
     </div>
   )
 }
@@ -481,6 +503,11 @@ function formatDateInput(value: string) {
   return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`
 }
 
+function formatDateForForm(value: string) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})/.exec(value)
+  return match ? `${match[2]}/${match[3]}/${match[1]}` : value
+}
+
 function isValidDateInput(value: string) {
   const match = /^(\d{2})\/(\d{2})\/(\d{4})$/.exec(value)
   if (!match) return false
@@ -492,8 +519,26 @@ function isValidDateInput(value: string) {
   return year > 0 && date.getFullYear() === year && date.getMonth() === month - 1 && date.getDate() === day
 }
 
-function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promise<void>; onClose: () => void }) {
-  const [form, setForm] = useState<Personnel>({
+function AddPersonnel({ initialPerson, onSave, onClose }: { initialPerson?: Personnel; onSave: (person: Personnel) => Promise<void>; onClose: () => void }) {
+  useEffect(() => {
+    const previousBodyOverflow = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      document.body.style.overflow = previousBodyOverflow
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onClose])
+
+  const [form, setForm] = useState<Personnel>(initialPerson ? {
+    ...initialPerson,
+    birthdate: formatDateForForm(initialPerson.birthdate),
+    dateOfEntry: formatDateForForm(initialPerson.dateOfEntry),
+  } : {
     id: '', name: '', position: '', assignment: '', birthdate: '', sg: '', dateOfEntry: '',
     eligibility: '', fundSource: '', tinNo: '', sssNo: '', philhealthNo: '', pagibigNo: '', gsisNo: '',
     email: '', contact: '', address: '', sex: '', division: personnelDivisionOptions[0], unit: '', employmentType: 'Contract of Service',
@@ -536,20 +581,22 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
     }
     setSaving(true)
     try {
-      await onAdd({ ...form, gsisNo: form.employmentType === 'Regular' ? form.gsisNo : undefined })
+      await onSave({ ...form, gsisNo: form.employmentType === 'Regular' ? form.gsisNo : undefined })
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : 'Unable to save personnel.')
+      const message = cause instanceof Error ? cause.message : 'Unable to save personnel.'
+      setError(message)
+      toast.error(message)
     } finally {
       setSaving(false)
     }
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4 backdrop-blur-sm" onClick={onClose}>
       <form onSubmit={submit} className="max-h-[90vh] w-full max-w-4xl overflow-y-auto rounded-xl bg-white shadow-2xl" onClick={(event) => event.stopPropagation()}>
-        <div className="flex items-center justify-between bg-[#17652a] px-6 py-4 text-white">
-          <h2 className="text-xl font-extrabold uppercase">Add Personnel</h2>
-          <button type="button" onClick={onClose} aria-label="Close add personnel form" className="rounded-md px-2 text-2xl leading-none text-green-100 hover:bg-white/10 hover:text-white">&times;</button>
+        <div className="flex items-center justify-between bg-slate-950 px-6 py-4 text-white">
+          <h2 className="text-xl font-extrabold uppercase">{initialPerson ? 'Update Personnel' : 'Add Personnel'}</h2>
+          <button type="button" onClick={onClose} aria-label="Close add personnel form" className="rounded-md px-2 text-2xl leading-none text-slate-300 hover:bg-white/10 hover:text-white">&times;</button>
         </div>
         {error && <p role="alert" className="px-6 pt-4 text-sm text-red-700">{error}</p>}
         <div className="grid gap-x-6 gap-y-4 px-6 py-6 sm:grid-cols-2">
@@ -561,35 +608,35 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
                   value={form.address}
                   onChange={(event) => update('address', event.target.value)}
                   rows={2}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100"
+                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-slate-400 focus:ring-2 focus:ring-slate-100"
                 />
               ) : (
-                <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? formatContributionNumber(field.key, event.target.value) : event.target.value)} required={field.required} disabled={field.key === 'gsisNo' && form.employmentType === 'Contract of Service'} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' || ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : field.key === 'tinNo' ? '###-###-### or ###-###-###-###' : field.key === 'sssNo' ? '##-#######-#' : field.key === 'philhealthNo' ? '##-#########-#' : field.key === 'pagibigNo' ? '####-####-####' : field.key === 'gsisNo' ? '11 digits' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100 disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" />
+                <input type="text" value={String(form[field.key] ?? '')} onChange={(event) => update(field.key, field.key === 'birthdate' || field.key === 'dateOfEntry' ? formatDateInput(event.target.value) : ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? formatContributionNumber(field.key, event.target.value) : event.target.value)} required={field.required} disabled={(initialPerson && field.key === 'id') || (field.key === 'gsisNo' && form.employmentType === 'Contract of Service')} inputMode={field.key === 'birthdate' || field.key === 'dateOfEntry' || ['tinNo', 'sssNo', 'philhealthNo', 'pagibigNo', 'gsisNo'].includes(field.key) ? 'numeric' : undefined} maxLength={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 10 : undefined} placeholder={field.key === 'birthdate' || field.key === 'dateOfEntry' ? 'MM/DD/YYYY' : field.key === 'tinNo' ? '###-###-### or ###-###-###-###' : field.key === 'sssNo' ? '##-#######-#' : field.key === 'philhealthNo' ? '##-#########-#' : field.key === 'pagibigNo' ? '####-####-####' : field.key === 'gsisNo' ? '11 digits' : undefined} pattern={field.key === 'birthdate' || field.key === 'dateOfEntry' ? '(0[1-9]|1[0-2])/(0[1-9]|[12][0-9]|3[01])/[0-9]{4}' : undefined} className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-[#17652a] focus:ring-2 focus:ring-[#e4f3e5] disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-400" />
               )}
             </label>
           ))}
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Sex
-            <select value={form.sex} onChange={(event) => update('sex', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+            <select value={form.sex} onChange={(event) => update('sex', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-[#17652a] focus:ring-2 focus:ring-[#e4f3e5]">
               <option value="">Select sex</option>
               {sexOptions.map((sex) => <option key={sex} value={sex}>{sex}</option>)}
             </select>
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Employment Type
-            <select value={form.employmentType} onChange={(event) => update('employmentType', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+            <select value={form.employmentType} onChange={(event) => update('employmentType', event.target.value)} className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-[#17652a] focus:ring-2 focus:ring-[#e4f3e5]">
               {groups.map((group) => <option key={group} value={group}>{group}</option>)}
             </select>
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Division
-            <select value={form.division} onChange={(event) => setForm((current) => ({ ...current, division: event.target.value, unit: '' }))} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+            <select value={form.division} onChange={(event) => setForm((current) => ({ ...current, division: event.target.value, unit: '' }))} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-[#17652a] focus:ring-2 focus:ring-[#e4f3e5]">
               {personnelDivisionOptions.map((division) => <option key={division} value={division}>{division}</option>)}
             </select>
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wide text-slate-600">
             Unit
-            <select value={form.unit} onChange={(event) => update('unit', event.target.value)} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-green-700 focus:ring-2 focus:ring-green-100">
+            <select value={form.unit} onChange={(event) => update('unit', event.target.value)} required className="mt-1 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-normal normal-case text-slate-900 outline-none focus:border-[#17652a] focus:ring-2 focus:ring-[#e4f3e5]">
               <option value="">Select unit</option>
               {unitsForDivision(form.division).map((unit) => <option key={unit} value={unit}>{unit}</option>)}
             </select>
@@ -597,7 +644,7 @@ function AddPersonnel({ onAdd, onClose }: { onAdd: (person: Personnel) => Promis
         </div>
         <div className="flex justify-end gap-3 border-t border-slate-200 bg-slate-50 px-6 py-3">
           <button type="button" onClick={onClose} className="rounded-lg border border-slate-300 px-5 py-2 text-xs font-bold uppercase text-slate-700 hover:bg-white">Cancel</button>
-          <button type="submit" disabled={saving} className="rounded-lg bg-[#17652a] px-5 py-2 text-xs font-bold uppercase text-white hover:bg-green-700 disabled:opacity-60">{saving ? 'Saving…' : 'Add Personnel'}</button>
+          <button type="submit" disabled={saving} className="rounded-lg bg-slate-950 px-5 py-2 text-xs font-bold uppercase text-white hover:bg-slate-700 disabled:opacity-60">{saving ? 'Saving…' : initialPerson ? 'Update Personnel' : 'Add Personnel'}</button>
         </div>
       </form>
     </div>
@@ -707,7 +754,7 @@ function FlatPersonnelTable({ people, title, onShow }: { people: Personnel[]; ti
           </colgroup>
           <thead>
             <tr className="border-b border-slate-200 bg-slate-100 text-center text-[10px] font-extrabold uppercase leading-tight tracking-wide text-slate-500">
-              {columns.map((column) => <th key={column.key} className="px-2 py-2">{column.label}</th>)}
+            {columns.map((column) => <th key={column.key} className="px-2 py-2">{column.label}</th>)}
             </tr>
           </thead>
           <tbody>
@@ -824,6 +871,20 @@ export default function MasterList() {
     if (!response.ok) throw new Error('message' in data ? data.message : 'Unable to save personnel.')
     setPeople((current) => [...current, data as Personnel])
     setShowAddPersonnel(false)
+    toast.success('Personnel added successfully.')
+  }
+
+  const updatePersonnel = async (person: Personnel) => {
+    const token = localStorage.getItem('masterlist-auth-token')
+    const response = await fetch(`/api/personnel/${encodeURIComponent(person.id)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify(person),
+    })
+    const data = await response.json() as Personnel | { message?: string }
+    if (!response.ok) throw new Error('message' in data ? data.message : 'Unable to update personnel.')
+    setPeople((current) => current.map((currentPerson) => currentPerson.id === person.id ? data as Personnel : currentPerson))
+    toast.success('Personnel updated successfully.')
   }
 
   return (
@@ -915,10 +976,10 @@ export default function MasterList() {
         </footer>
       </div>
 
-      {selected && <PersonnelDetails person={selected} onClose={() => setSelected(null)} />}
+      {selected && <PersonnelDetails person={selected} onClose={() => setSelected(null)} onUpdate={updatePersonnel} />}
       {showAddPersonnel && (
         <AddPersonnel
-          onAdd={addPersonnel}
+          onSave={addPersonnel}
           onClose={() => setShowAddPersonnel(false)}
         />
       )}
